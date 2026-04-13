@@ -1,0 +1,1 @@
+"""Dominio: filtros y scoring."""
