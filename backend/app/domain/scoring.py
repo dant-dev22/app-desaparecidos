@@ -1,38 +1,37 @@
 """
 Cálculo de puntuación de riesgo a partir de casos filtrados similares.
 
-Combina similitud con el perfil del usuario y atributos de cada caso (recencia,
-estatus, condición de localización) en un score agregado.
+Agrega pesos por similitud (edad, sexo, estatura), recencia, estatus y condición.
 """
 
 from __future__ import annotations
 
-from datetime import date, datetime
+import re
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 
 
 def normalize_string(value: Any) -> Optional[str]:
     """
-    Normaliza texto para comparaciones: elimina espacios, mayúsculas y descarta vacíos.
+    Normaliza texto para comparaciones: acepta null, recorta y pasa a mayúsculas.
 
     Args:
-        value: Cadena u otro valor; ``None`` y cadenas vacías tras trim se tratan como ausentes.
+        value: Valor crudo (típicamente str); otro tipo o vacío → None.
 
     Returns:
-        Cadena en mayúsculas sin bordes, o ``None`` si no hay texto utilizable.
+        Cadena normalizada o None si no hay texto útil.
     """
     if value is None:
         return None
-    if isinstance(value, str):
-        s = value.strip()
-    else:
-        s = str(value).strip()
+    if not isinstance(value, str):
+        return None
+    s = value.strip()
     if not s:
         return None
     return s.upper()
 
 
-def _parse_optional_float(value: Any) -> Optional[float]:
+def _to_float(value: Any) -> Optional[float]:
     if value is None:
         return None
     if isinstance(value, bool):
@@ -40,36 +39,46 @@ def _parse_optional_float(value: Any) -> Optional[float]:
     if isinstance(value, (int, float)):
         return float(value)
     if isinstance(value, str):
-        t = value.strip()
-        if not t:
+        s = value.strip().replace(",", ".")
+        if not s:
             return None
         try:
-            return float(t.replace(",", "."))
+            return float(s)
         except ValueError:
             return None
     return None
 
 
-def _parse_optional_int(value: Any) -> Optional[int]:
-    if value is None or isinstance(value, bool):
+def _to_int(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
         return None
     if isinstance(value, int):
         return value
     if isinstance(value, float):
         return int(value)
     if isinstance(value, str):
-        t = value.strip()
-        if not t:
+        s = value.strip()
+        if not s:
             return None
         try:
-            return int(t)
+            return int(float(s.replace(",", ".")))
         except ValueError:
             return None
     return None
 
 
-def _parse_fecha_desaparicion(value: Any) -> Optional[date]:
-    """Interpreta ``fecha_desaparicion`` como fecha local (string u objetos date/datetime)."""
+def parse_fecha_desaparicion(value: Any) -> Optional[date]:
+    """
+    Interpreta fecha_desaparicion desde tipos habituales (date, datetime, ISO string).
+
+    Args:
+        value: Valor del registro REPD.
+
+    Returns:
+        Fecha local del hecho o None si no es posible interpretarla.
+    """
     if value is None:
         return None
     if isinstance(value, datetime):
@@ -82,90 +91,124 @@ def _parse_fecha_desaparicion(value: Any) -> Optional[date]:
     if not s:
         return None
     if "T" in s:
+        s = s.split("T", 1)[0]
+    s_iso = s.replace("Z", "+00:00")
+    for candidate in (s, s_iso):
         try:
-            return datetime.fromisoformat(s.replace("Z", "+00:00")).date()
-        except ValueError:
-            s = s.split("T", 1)[0]
-    if len(s) >= 10:
-        head = s[:10]
-        try:
-            return date.fromisoformat(head)
+            dt = datetime.fromisoformat(candidate)
+            if dt.tzinfo is not None:
+                dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+            return dt.date()
         except ValueError:
             pass
-        for fmt in ("%d/%m/%Y", "%m/%d/%Y"):
-            try:
-                return datetime.strptime(head, fmt).date()
-            except ValueError:
-                continue
     for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
         try:
-            return datetime.strptime(s, fmt).date()
+            return datetime.strptime(s[:10], fmt).date()
         except ValueError:
             continue
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", s)
+    if m:
+        try:
+            return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            return None
     return None
 
 
-def _recency_points(fecha_desaparicion: Optional[date]) -> float:
+def _recency_points(fecha_desaparicion: Optional[date], today: date) -> float:
     if fecha_desaparicion is None:
         return 0.0
-    today = date.today()
     dias = (today - fecha_desaparicion).days
     if dias < 0:
-        dias = 0
+        return 0.0
     return max(0.0, 5.0 - (dias / 30.0))
 
 
-def _points_estatus_persona(estatus_norm: Optional[str]) -> int:
-    if estatus_norm is None:
-        return 0
-    if estatus_norm == "PERSONA DESAPARECIDA":
-        return 3
-    if estatus_norm == "PERSONA LOCALIZADA":
-        return 0
-    return 0
+def _estatus_points(estatus_raw: Any) -> float:
+    n = normalize_string(estatus_raw)
+    if n is None:
+        return 0.0
+    if n == "PERSONA DESAPARECIDA":
+        return 3.0
+    if n == "PERSONA LOCALIZADA":
+        return 0.0
+    return 0.0
 
 
-def _points_condicion_localizacion(cond_norm: Optional[str]) -> int:
-    if cond_norm is None:
-        return 0
-    if cond_norm == "SIN VIDA":
-        return 5
-    if cond_norm == "CON VIDA":
-        return 1
-    if cond_norm == "NO APLICA":
-        return 2
-    return 0
+def _condicion_points(condicion_raw: Any) -> float:
+    n = normalize_string(condicion_raw)
+    if n is None:
+        return 0.0
+    if n == "SIN VIDA":
+        return 5.0
+    if n == "CON VIDA":
+        return 1.0
+    if n == "NO APLICA":
+        return 2.0
+    return 0.0
 
 
-def _subscore_person(person: Dict[str, Any], user_input: Dict[str, Any]) -> float:
+def _edad_points(person: Dict[str, Any], user_edad: int) -> float:
+    edad_reg = _to_int(person.get("edad_momento_desaparicion"))
+    if edad_reg is None:
+        return 0.0
+    if abs(edad_reg - user_edad) <= 3:
+        return 2.0
+    return 0.0
+
+
+def _sexo_points(person: Dict[str, Any], user_sexo_norm: str) -> float:
+    n = normalize_string(person.get("sexo"))
+    if n is None:
+        return 0.0
+    if n == user_sexo_norm:
+        return 2.0
+    return 0.0
+
+
+def _estatura_points(person: Dict[str, Any], user_estatura: Optional[float]) -> float:
+    if user_estatura is None:
+        return 0.0
+    est_reg = _to_float(person.get("estatura"))
+    if est_reg is None:
+        return 0.0
+    if abs(est_reg - user_estatura) < 0.10:
+        return 1.0
+    return 0.0
+
+
+def extract_image_url(person: Dict[str, Any]) -> Optional[str]:
+    """
+    Obtiene la ruta o URL de la imagen desde ``ruta_foto`` (REPD).
+
+    Args:
+        person: Diccionario de persona (REPD).
+
+    Returns:
+        Cadena no vacía o None.
+    """
+    v = person.get("ruta_foto")
+    if isinstance(v, str):
+        u = v.strip()
+        if u:
+            return u
+    return None
+
+
+def _sub_score_for_person(
+    person: Dict[str, Any],
+    user_edad: int,
+    user_sexo_norm: str,
+    user_estatura: Optional[float],
+    today: date,
+) -> float:
     total = 0.0
-
-    user_edad = user_input.get("edad")
-    if isinstance(user_edad, int):
-        edad_reg = _parse_optional_int(person.get("edad_momento_desaparicion"))
-        if edad_reg is not None and abs(edad_reg - user_edad) <= 3:
-            total += 2.0
-
-    user_sexo = normalize_string(user_input.get("sexo"))
-    sexo_reg = normalize_string(person.get("sexo"))
-    if user_sexo is not None and sexo_reg is not None and user_sexo == sexo_reg:
-        total += 2.0
-
-    user_estatura = _parse_optional_float(user_input.get("estatura"))
-    if user_estatura is not None:
-        reg_estatura = _parse_optional_float(person.get("estatura"))
-        if reg_estatura is not None and abs(reg_estatura - user_estatura) < 0.10:
-            total += 1.0
-
-    fecha = _parse_fecha_desaparicion(person.get("fecha_desaparicion"))
-    total += _recency_points(fecha)
-
-    estatus_norm = normalize_string(person.get("estatus_persona_desaparecida"))
-    total += float(_points_estatus_persona(estatus_norm))
-
-    cond_norm = normalize_string(person.get("condicion_localizacion"))
-    total += float(_points_condicion_localizacion(cond_norm))
-
+    total += _edad_points(person, user_edad)
+    total += _sexo_points(person, user_sexo_norm)
+    total += _estatura_points(person, user_estatura)
+    total += _recency_points(parse_fecha_desaparicion(person.get("fecha_desaparicion")), today)
+    total += _estatus_points(person.get("estatus_persona_desaparecida"))
+    total += _condicion_points(person.get("condicion_localizacion"))
     return total
 
 
@@ -174,22 +217,49 @@ def calculate_score(
     user_input: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
-    Calcula el score y nivel de riesgo sumando sub-puntuaciones por cada caso filtrado.
+    Calcula score agregado y nivel de riesgo a partir de casos filtrados y datos del usuario.
 
-    Cada registro aporta puntos por proximidad de edad, sexo, estatura (si aplica),
-    recencia de la desaparición, estatus de la persona y condición de localización.
+    El score es la suma de sub-scores por persona (similitud de edad ±3 años, sexo, estatura,
+    recencia, estatus y condición) **más un punto por cada caso similar** (volumen).
+    ``total_casos_similares`` es ``len(casos_similares)`` y entra en ese aporte al score final.
+    ``casos_similares`` es la lista de dicts con ``id_cedula_busqueda`` y ``ruta_foto`` por registro.
 
     Args:
         filtered_list: Registros que pasaron ``filter_persons``.
-        user_input: Perfil de referencia con al menos ``edad`` (int) y ``sexo`` (str);
-            ``estatura`` (float, metros) es opcional.
+        user_input: Debe incluir ``edad`` (int) y ``sexo`` (str); ``estatura`` (float) es opcional.
 
     Returns:
-        Diccionario con ``score`` (suma de sub-puntuaciones), ``nivel`` (bajo/medio/alto)
-        según umbrales actuales, y ``casos_similares`` (cantidad de registros en la lista).
+        Diccionario con ``score``, ``nivel``, ``casos_similares``, ``total_casos_similares``.
     """
-    total_score = sum(_subscore_person(p, user_input) for p in filtered_list)
-    casos_similares = len(filtered_list)
+    edad = _to_int(user_input.get("edad"))
+    if edad is None:
+        edad = 0
+    user_sexo_norm = normalize_string(user_input.get("sexo")) or ""
+    user_estatura = _to_float(user_input.get("estatura"))
+
+    today = date.today()
+    total_score = 0.0
+    casos_similares: List[Dict[str, Any]] = []
+
+    for person in filtered_list:
+        if not isinstance(person, dict):
+            continue
+        total_score += _sub_score_for_person(
+            person,
+            user_edad=edad,
+            user_sexo_norm=user_sexo_norm,
+            user_estatura=user_estatura,
+            today=today,
+        )
+        casos_similares.append(
+            {
+                "id_cedula_busqueda": person.get("id_cedula_busqueda"),
+                "ruta_foto": extract_image_url(person),
+            }
+        )
+
+    total_casos_similares = len(casos_similares)
+    total_score += float(total_casos_similares)
 
     if total_score <= 20:
         nivel = "bajo"
@@ -199,7 +269,8 @@ def calculate_score(
         nivel = "alto"
 
     return {
-        "score": round(total_score, 2),
+        "score": round(total_score, 4),
         "nivel": nivel,
         "casos_similares": casos_similares,
+        "total_casos_similares": total_casos_similares,
     }
