@@ -28,3 +28,30 @@ CEDULAS_PAGE_LIMIT: int = 100
 # Límites razonables para códigos CONABIO/INEGI de entidad federativa en México (1–32).
 ESTADO_ID_MIN: int = 1
 ESTADO_ID_MAX: int = 32
+
+
+def _env_truthy(name: str) -> bool:
+    v = os.environ.get(name, "").strip().lower()
+    return v in ("1", "true", "yes", "on")
+
+
+def openapi_docs_enabled() -> bool:
+    """Si DISABLE_DOCS está activo, no se publican /docs, /redoc ni /openapi.json."""
+    return not _env_truthy("DISABLE_DOCS")
+
+
+def cors_allow_origins() -> list[str]:
+    """Orígenes CORS: lista separada por comas en CORS_ALLOW_ORIGINS o ['*'] si no existe la variable."""
+    raw = os.environ.get("CORS_ALLOW_ORIGINS")
+    if raw is None:
+        return ["*"]
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    return parts if parts else ["*"]
+
+
+def trusted_allowed_hosts() -> list[str] | None:
+    """Hosts permitidos (cabecera Host). None = sin validación (adecuado en local detrás de 127.0.0.1)."""
+    raw = os.environ.get("ALLOWED_HOSTS")
+    if raw is None or not raw.strip():
+        return None
+    return [h.strip() for h in raw.split(",") if h.strip()]
