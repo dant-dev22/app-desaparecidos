@@ -8,13 +8,21 @@ from pydantic import BaseModel, Field
 
 
 class CasoSimilar(BaseModel):
-    """Un caso REPD similar con identificador de cédula y ruta de foto."""
+    """Un caso REPD similar con datos mínimos de la cédula y la persona."""
 
     id_cedula_busqueda: Optional[Union[int, str]] = Field(
         None,
         description="Identificador de cédula de búsqueda (REPD)",
     )
     ruta_foto: Optional[str] = Field(None, description="Ruta o URL de la fotografía")
+    nombre_completo: Optional[str] = Field(
+        None,
+        description="Nombre completo según registro REPD",
+    )
+    edad_momento_desaparicion: Optional[int] = Field(
+        None,
+        description="Edad al momento de la desaparición (REPD)",
+    )
 
 
 class RiskResponse(BaseModel):
@@ -34,7 +42,10 @@ class RiskResponse(BaseModel):
     nivel: str = Field(..., description="Nivel de riesgo: bajo, medio o alto")
     casos_similares: List[CasoSimilar] = Field(
         default_factory=list,
-        description="Casos similares con id_cedula_busqueda y ruta_foto",
+        description=(
+            "Todos los casos similares, ordenados: prioriza estatus distinto de PERSONA LOCALIZADA "
+            "y, entre esos, quienes traen ruta_foto (útil cuando hay 3 o más casos)."
+        ),
     )
     total_casos_similares: int = Field(
         ...,

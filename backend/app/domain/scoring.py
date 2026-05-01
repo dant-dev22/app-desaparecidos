@@ -124,6 +124,10 @@ def _recency_points(fecha_desaparicion: Optional[date], today: date) -> float:
     return max(0.0, 5.0 - (dias / 30.0))
 
 
+def _estatus_distinto_de_persona_localizada(estatus_raw: Any) -> bool:
+    return normalize_string(estatus_raw) != "PERSONA LOCALIZADA"
+
+
 def _estatus_points(estatus_raw: Any) -> float:
     n = normalize_string(estatus_raw)
     if n is None:
@@ -195,6 +199,32 @@ def extract_image_url(person: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _prioritize_persons_para_casos_similares(
+    personas: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """
+    Ordena registros para la respuesta: prioriza estatus distinto de PERSONA LOCALIZADA y,
+    dentro de ese criterio, quienes traen ``ruta_foto`` no vacía. Con 3 o más casos totales,
+    los tres primeros de la lista agrupan antes a quienes suelen tener ``ruta_foto`` poblada en
+    REPD cuando existen suficientes registros así.
+    """
+    validas = [p for p in personas if isinstance(p, dict)]
+
+    decorated: List[tuple[tuple, Dict[str, Any]]] = []
+    for p in validas:
+        dl = _estatus_distinto_de_persona_localizada(p.get("estatus_persona_desaparecida"))
+        foto = extract_image_url(p)
+        orden = (
+            not dl,
+            foto is None,
+            str(p.get("id_cedula_busqueda") or ""),
+        )
+        decorated.append((orden, p))
+
+    decorated.sort(key=lambda t: t[0])
+    return [p for _, p in decorated]
+
+
 def _sub_score_for_person(
     person: Dict[str, Any],
     user_edad: int,
@@ -221,8 +251,12 @@ def calculate_score(
 
     El score es la suma de sub-scores por persona (similitud de edad ±3 años, sexo, estatura,
     recencia, estatus y condición) **más un punto por cada caso similar** (volumen).
+    Si en esos registros hay al menos dos con estatus distinto de PERSONA LOCALIZADA, el peso del
+    término de volumen se duplica (**mayor intensidad**).
     ``total_casos_similares`` es ``len(casos_similares)`` y entra en ese aporte al score final.
-    ``casos_similares`` es la lista de dicts con ``id_cedula_busqueda`` y ``ruta_foto`` por registro.
+    ``casos_similares`` incluye todos los registros ordenados para la respuesta: primero los de
+    estatus distinto de PERSONA LOCALIZADA y, entre ellos, quienes traen ``ruta_foto`` así, con
+    tres o más casos globales los primeros de la lista suelen tener foto cuando REPD las suministra.
 
     Args:
         filtered_list: Registros que pasaron ``filter_persons``.
@@ -239,11 +273,13 @@ def calculate_score(
 
     today = date.today()
     total_score = 0.0
-    casos_similares: List[Dict[str, Any]] = []
+    casos_distintos_localizada = 0
 
-    for person in filtered_list:
-        if not isinstance(person, dict):
-            continue
+    personas_validas = [p for p in filtered_list if isinstance(p, dict)]
+
+    for person in personas_validas:
+        if _estatus_distinto_de_persona_localizada(person.get("estatus_persona_desaparecida")):
+            casos_distintos_localizada += 1
         total_score += _sub_score_for_person(
             person,
             user_edad=edad,
@@ -251,15 +287,29 @@ def calculate_score(
             user_estatura=user_estatura,
             today=today,
         )
+
+    personas_ord = _prioritize_persons_para_casos_similares(personas_validas)
+    casos_similares: List[Dict[str, Any]] = []
+    for person in personas_ord:
+        nombre = person.get("nombre_completo")
+        nombre_str = nombre.strip() if isinstance(nombre, str) else None
+        if nombre_str == "":
+            nombre_str = None
         casos_similares.append(
             {
                 "id_cedula_busqueda": person.get("id_cedula_busqueda"),
                 "ruta_foto": extract_image_url(person),
+                "nombre_completo": nombre_str,
+                "edad_momento_desaparicion": _to_int(person.get("edad_momento_desaparicion")),
             }
         )
 
     total_casos_similares = len(casos_similares)
-    total_score += float(total_casos_similares)
+    volume = float(total_casos_similares)
+    if casos_distintos_localizada >= 2:
+        total_score += volume * 2.0
+    else:
+        total_score += volume
 
     if total_score <= 20:
         nivel = "bajo"
