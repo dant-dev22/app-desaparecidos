@@ -23,6 +23,16 @@ class CasoSimilar(BaseModel):
         None,
         description="Edad al momento de la desaparición (REPD)",
     )
+    estatura: Optional[float] = Field(
+        None,
+        description="Estatura en metros según registro REPD",
+    )
+    tez: Optional[str] = Field(None, description="Tez según registro REPD")
+    ojos_color: Optional[str] = Field(None, description="Color de ojos según registro REPD")
+    fecha_desaparicion: Optional[str] = Field(
+        None,
+        description="Fecha de desaparición (REPD; ISO u original si no es parseable)",
+    )
 
 
 class RiskResponse(BaseModel):

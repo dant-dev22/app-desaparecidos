@@ -69,6 +69,27 @@ def _to_int(value: Any) -> Optional[int]:
     return None
 
 
+def _texto_opcional_rep(value: Any) -> Optional[str]:
+    """Cadena ``str`` del REPD tras trim; vacía u otro tipo → None."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        return None
+    s = value.strip()
+    return s if s else None
+
+
+def _fecha_desaparicion_respuesta(person: Dict[str, Any]) -> Optional[str]:
+    """Valor serializable para la API: ISO si hay fecha parseable, si no el string crudo."""
+    raw = person.get("fecha_desaparicion")
+    parsed = parse_fecha_desaparicion(raw)
+    if parsed is not None:
+        return parsed.isoformat()
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return None
+
+
 def parse_fecha_desaparicion(value: Any) -> Optional[date]:
     """
     Interpreta fecha_desaparicion desde tipos habituales (date, datetime, ISO string).
@@ -301,6 +322,10 @@ def calculate_score(
                 "ruta_foto": extract_image_url(person),
                 "nombre_completo": nombre_str,
                 "edad_momento_desaparicion": _to_int(person.get("edad_momento_desaparicion")),
+                "estatura": _to_float(person.get("estatura")),
+                "tez": _texto_opcional_rep(person.get("tez")),
+                "ojos_color": _texto_opcional_rep(person.get("ojos_color")),
+                "fecha_desaparicion": _fecha_desaparicion_respuesta(person),
             }
         )
 
