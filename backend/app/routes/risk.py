@@ -7,7 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 from requests import exceptions as req_exc
 
-from app.core.config import MUNICIPIOS
+from app.core.config import ESTADO_ID_MAX, ESTADO_ID_MIN
 from app.domain.filters import filter_persons
 from app.domain.scoring import calculate_score, normalize_string
 from app.models.schemas import RiskResponse
@@ -24,10 +24,29 @@ _repd_client = RepdClient()
     summary="Riesgo por similitud de casos desaparecidos (REPD Jalisco)",
 )
 def get_risk(
-    municipio: str = Query(
+    estado: int = Query(
         ...,
-        description="Municipio: guadalajara, zapopan, tonala, tlaquepaque, tlajomulco",
-        examples=["guadalajara"],
+        ge=ESTADO_ID_MIN,
+        le=ESTADO_ID_MAX,
+        description=(
+            "Código numérico de la entidad federativa (ej. resultado de geo en el cliente; 1–32)."
+        ),
+        examples=[14],
+    ),
+    municipio_id: int = Query(
+        ...,
+        ge=1,
+        le=99999,
+        description=(
+            "Identificador numérico del municipio esperado por la API REPD (enviado por el cliente, "
+            "p. ej. CVEGEO)."
+        ),
+        examples=[14039],
+    ),
+    municipio_nombre: Optional[str] = Query(
+        None,
+        description="Nombre/localidad legible opcional desde geolocalización (se devuelve en la respuesta).",
+        examples=["Guadalajara"],
     ),
     edad: int = Query(..., ge=0, le=120, description="Edad de referencia (±3 años en filtro)"),
     sexo: str = Query(
@@ -51,11 +70,13 @@ def get_risk(
     ),
 ) -> RiskResponse:
     """
-    Calcula score y nivel de riesgo según casos REPD: municipio (consulta REPD), opcionalmente
+    Calcula score y nivel de riesgo según casos REPD: estado y municipio (consulta REPD), opcionalmente
     acotado por colonia, más edad y sexo.
 
     Args:
-        municipio: Nombre del municipio (clave en el mapeo interno).
+        estado: Identificador de entidad federativa usado por la API REPD.
+        municipio_id: Identificador del municipio usado por la API REPD (p. ej. desde geointel client).
+        municipio_nombre: Opcional; nombre legible desde el cliente para la respuesta.
         edad: Edad para la ventana ±3 años.
         sexo: Debe coincidir exactamente con el valor en REPD (p. ej. HOMBRE).
         estatura: Opcional; si se envía, puede sumar peso si coincide con el registro.
@@ -65,19 +86,13 @@ def get_risk(
         ``RiskResponse`` con score, nivel, casos, total_casos_similares, municipio y colonia.
 
     Raises:
-        HTTPException: 400 si el municipio no está soportado; 502/504 según fallo REPD.
+        HTTPException: 502/504 según fallo REPD.
     """
-    key = municipio.strip().lower()
-    if key not in MUNICIPIOS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Municipio no válido: {municipio}. Válidos: {', '.join(sorted(MUNICIPIOS.keys()))}",
-        )
 
-    municipio_id = MUNICIPIOS[key]
+    etiqueta_municipio = municipio_nombre.strip() if municipio_nombre and municipio_nombre.strip() else str(municipio_id)
 
     try:
-        raw = _repd_client.fetch_cedulas(municipio_id)
+        raw = _repd_client.fetch_cedulas(estado, municipio_id)
     except req_exc.Timeout as e:
         raise HTTPException(status_code=504, detail="Tiempo de espera agotado al consultar REPD") from e
     except req_exc.HTTPError as e:
@@ -104,6 +119,6 @@ def get_risk(
         nivel=metrics["nivel"],
         casos_similares=metrics["casos_similares"],
         total_casos_similares=metrics["total_casos_similares"],
-        municipio=key,
+        municipio=etiqueta_municipio,
         colonia=colonia_resp,
     )

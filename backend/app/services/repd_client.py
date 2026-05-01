@@ -10,7 +10,7 @@ from typing import Any, Dict, List
 import requests
 from requests import exceptions as req_exc
 
-from app.core.config import BASE_URL, CEDULAS_PAGE_LIMIT, ESTADO_JALISCO, TIMEOUT
+from app.core.config import BASE_URL, CEDULAS_PAGE_LIMIT, TIMEOUT
 from app.core.logging import get_logger
 
 logger = get_logger("repd_client")
@@ -35,26 +35,28 @@ class RepdClient:
         """
         self.timeout = timeout
 
-    def build_url(self, municipio_id: int) -> str:
+    def build_url(self, estado_id: int, municipio_id: int) -> str:
         """
         Construye la URL absoluta del endpoint con estado y municipio.
 
         Args:
-            municipio_id: Identificador numérico del municipio en la API.
+            estado_id: Código numérico de la entidad federativa (ej. según datos del front/geo).
+            municipio_id: Identificador del municipio esperado por la API REPD (ej. CVEGEO o equivalente).
 
         Returns:
             URL completa lista para GET (parámetros de página se añaden en fetch).
         """
         base = BASE_URL.rstrip("/") + "/"
         path = CEDULAS_PATH.lstrip("/")
-        return f"{base}{path}?estado={ESTADO_JALISCO}&municipio={municipio_id}"
+        return f"{base}{path}?estado={estado_id}&municipio={municipio_id}"
 
-    def fetch_cedulas(self, municipio_id: int) -> Dict[str, Any]:
+    def fetch_cedulas(self, estado_id: int, municipio_id: int) -> Dict[str, Any]:
         """
         Obtiene todas las cédulas disponibles para el municipio (paginación interna).
 
         Args:
-            municipio_id: Identificador del municipio.
+            estado_id: Código numérico de la entidad federativa.
+            municipio_id: Identificador numérico del municipio para la petición REPD.
 
         Returns:
             Diccionario con ``count``, ``total_pages`` y ``results`` (lista fusionada).
@@ -70,7 +72,7 @@ class RepdClient:
         total_pages: int = 1
 
         while page <= total_pages:
-            url = self.build_url(municipio_id)
+            url = self.build_url(estado_id, municipio_id)
             url = f"{url}&page={page}&limit={limit}"
             logger.info("Solicitando cédulas REPD: municipio_id=%s page=%s", municipio_id, page)
 

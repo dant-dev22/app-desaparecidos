@@ -1,12 +1,10 @@
 """
 Configuración centralizada de la aplicación.
 
-Define URL base del REPD Jalisco, timeout HTTP y mapeo de nombres de municipio
-a identificadores numéricos usados por la API pública.
+Define URL base del REPD Jalisco, timeout HTTP y constantes para la API pública.
 """
 
 import os
-from typing import Dict
 
 # URL base de la API pública de versiones de cédulas (REPD Jalisco).
 BASE_URL: str = "https://repd.jalisco.gob.mx/api/v1/version_publica/"
@@ -27,14 +25,6 @@ TIMEOUT: int = _read_timeout()
 # Registros por página al paginar el endpoint de cédulas (misma API, menos round-trips).
 CEDULAS_PAGE_LIMIT: int = 100
 
-# Código de estado (Jalisco) requerido por la API.
-ESTADO_JALISCO: int = 14
-
-# Mapeo nombre normalizado -> id de municipio en la API.
-MUNICIPIOS: Dict[str, int] = {
-    "guadalajara": 14039,
-    "zapopan": 14070,
-    "tonala": 14101,
-    "tlaquepaque": 14098,
-    "tlajomulco": 14097,
-}
+# Límites razonables para códigos CONABIO/INEGI de entidad federativa en México (1–32).
+ESTADO_ID_MIN: int = 1
+ESTADO_ID_MAX: int = 32
