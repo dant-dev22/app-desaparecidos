@@ -1,0 +1,5 @@
+# Python 3.10+ — producido con pip instalando fastapi / uvicorn[standard] / requests
+# Actualizar junto al código si cambias versiones Python o necesitas seguridad nueva.
+fastapi==0.136.1
+uvicorn[standard]==0.46.0
+requests==2.33.1

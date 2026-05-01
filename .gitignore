@@ -52,6 +52,15 @@ dmypy.json
 .env.*
 !.env.example
 
+# Credenciales / claves locales (never commit real certs)
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Venv temporal o de generación local
+**/.venv-tmp-requirements/
+
 # IDE / editor
 .idea/
 .vscode/

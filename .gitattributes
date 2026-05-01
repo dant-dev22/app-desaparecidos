@@ -1,0 +1,4 @@
+# Evita mezclas CRLF/LF en scripts y mejor diffs por defecto
+* text=auto
+*.py text diff=python
+*.md text
