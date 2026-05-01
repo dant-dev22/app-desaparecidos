@@ -11,6 +11,8 @@ from app.routes.risk import router as risk_router
 
 setup_logging()
 
+API_PREFIX = "/api"
+
 app = FastAPI(
     title="REPD Risk API",
     description=(
@@ -28,5 +30,5 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(locations_router)
-app.include_router(risk_router)
+app.include_router(locations_router, prefix=API_PREFIX)
+app.include_router(risk_router, prefix=API_PREFIX)
