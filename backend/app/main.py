@@ -12,6 +12,10 @@ from app.core.config import (
     trusted_allowed_hosts,
 )
 from app.core.logging import setup_logging
+from fastapi import Header, HTTPException
+
+from app.core import counter
+from app.core.config import stats_token
 from app.routes.locations import router as locations_router
 from app.routes.risk import router as risk_router
 
@@ -65,3 +69,11 @@ async def security_headers(request, call_next):
 
 app.include_router(locations_router, prefix=API_PREFIX)
 app.include_router(risk_router, prefix=API_PREFIX)
+
+
+@app.get(f"{API_PREFIX}/stats", include_in_schema=False)
+def get_stats(x_stats_token: str | None = Header(default=None)):
+    required = stats_token()
+    if required and x_stats_token != required:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return {"total_calls": counter.get_total()}

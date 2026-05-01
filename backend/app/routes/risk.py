@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query
 from requests import exceptions as req_exc
 
 from app.core.config import ESTADO_ID_MAX, ESTADO_ID_MIN
+from app.core import counter
 from app.domain.filters import filter_persons
 from app.domain.scoring import calculate_score, normalize_string
 from app.models.schemas import RiskResponse
@@ -114,6 +115,7 @@ def get_risk(
 
     colonia_resp: Optional[str] = normalize_string(colonia) if colonia else None
 
+    counter.increment()
     return RiskResponse(
         score=metrics["score"],
         nivel=metrics["nivel"],

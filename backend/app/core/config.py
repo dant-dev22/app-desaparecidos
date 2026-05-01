@@ -49,6 +49,12 @@ def cors_allow_origins() -> list[str]:
     return parts if parts else ["*"]
 
 
+def stats_token() -> str | None:
+    """Token para proteger /api/stats. None = endpoint abierto (útil en local)."""
+    v = os.environ.get("STATS_TOKEN", "").strip()
+    return v if v else None
+
+
 def trusted_allowed_hosts() -> list[str] | None:
     """Hosts permitidos (cabecera Host). None = sin validación (adecuado en local detrás de 127.0.0.1)."""
     raw = os.environ.get("ALLOWED_HOSTS")
